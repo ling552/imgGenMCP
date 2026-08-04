@@ -1,0 +1,30 @@
+# Rust 构建产物
+target/
+
+# ImgGen 运行时数据：包含 API Key、历史记录和生成图片
+data/
+
+# 本地发布暂存目录
+dist/
+release/
+
+# 本地环境变量与凭据
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# 编辑器和操作系统文件
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# 本地 Claude Code 配置与计划
+.claude/
+
+# Windows 安装器临时文件
+installer/output/
+installer/*.log

@@ -1,0 +1,154 @@
+name: Windows Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要发布的版本标签，例如 v0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release-windows:
+    name: Build Windows x86_64 release
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust stable
+        shell: pwsh
+        run: |
+          rustup toolchain install stable-x86_64-pc-windows-msvc --profile minimal
+          rustup default stable-x86_64-pc-windows-msvc
+          rustc --version
+          cargo --version
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\.cargo\registry
+            ~\.cargo\git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Validate version
+        shell: pwsh
+        env:
+          WORKFLOW_TAG: ${{ inputs.tag }}
+          PUSH_TAG: ${{ github.ref_name }}
+        run: |
+          if ($env:GITHUB_EVENT_NAME -eq "workflow_dispatch") {
+            $versionTag = $env:WORKFLOW_TAG
+          } else {
+            $versionTag = $env:PUSH_TAG
+          }
+          if ($versionTag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$') {
+            throw "版本标签格式无效：$versionTag"
+          }
+          $metadata = cargo metadata --no-deps --format-version 1 | ConvertFrom-Json
+          $packageVersion = $metadata.packages[0].version
+          $tagVersion = $versionTag.Substring(1)
+          if ($packageVersion -ne $tagVersion) {
+            throw "Cargo 版本 $packageVersion 与标签 $versionTag 不一致"
+          }
+          "VERSION_TAG=$versionTag" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "PACKAGE_VERSION=$packageVersion" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Build release binary
+        run: cargo build --release --locked --target x86_64-pc-windows-msvc
+
+      - name: Prepare portable ZIP
+        shell: pwsh
+        run: |
+          $root = "dist\ImgGen-windows-x86_64-v$env:PACKAGE_VERSION"
+          New-Item -ItemType Directory -Force -Path $root, "$root\assets" | Out-Null
+          Copy-Item "target\x86_64-pc-windows-msvc\release\imggen.exe" "$root\imggen.exe"
+          Copy-Item "README.md" "$root\README.md"
+          Copy-Item "LICENSE" "$root\LICENSE"
+          Copy-Item "assets\imggen-icon.svg" "$root\assets\imggen-icon.svg"
+          $zip = "dist\ImgGen-windows-x86_64-v$env:PACKAGE_VERSION.zip"
+          Compress-Archive -Path "$root\*" -DestinationPath $zip -CompressionLevel Optimal
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress --yes
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "target\release" | Out-Null
+          Copy-Item "target\x86_64-pc-windows-msvc\release\imggen.exe" "target\release\imggen.exe" -Force
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            throw "未找到 Inno Setup 编译器：$iscc"
+          }
+          & $iscc "/DMyAppVersion=$env:PACKAGE_VERSION" "installer\imggen.iss"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup 编译失败，退出码：$LASTEXITCODE"
+          }
+          $installer = "installer\output\ImgGen-windows-x86_64-v$env:PACKAGE_VERSION-setup.exe"
+          if (-not (Test-Path $installer)) {
+            throw "未生成安装程序：$installer"
+          }
+          Copy-Item $installer "dist\$([System.IO.Path]::GetFileName($installer))"
+
+      - name: Verify release assets
+        shell: pwsh
+        run: |
+          $assets = @(
+            "dist\ImgGen-windows-x86_64-v$env:PACKAGE_VERSION.zip",
+            "dist\ImgGen-windows-x86_64-v$env:PACKAGE_VERSION-setup.exe"
+          )
+          foreach ($asset in $assets) {
+            if (-not (Test-Path $asset)) {
+              throw "缺少 Release 资产：$asset"
+            }
+            $size = (Get-Item $asset).Length
+            if ($size -le 0) {
+              throw "Release 资产为空：$asset"
+            }
+            Write-Host "$asset ($size bytes)"
+          }
+          tar -tf "dist\ImgGen-windows-x86_64-v$env:PACKAGE_VERSION.zip"
+
+      - name: Create GitHub Release and upload assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:VERSION_TAG
+          $release = gh release view $tag --repo "${{ github.repository }}" 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag `
+              "dist\ImgGen-windows-x86_64-v$env:PACKAGE_VERSION.zip" `
+              "dist\ImgGen-windows-x86_64-v$env:PACKAGE_VERSION-setup.exe" `
+              --repo "${{ github.repository }}" `
+              --title "ImgGen $tag" `
+              --generate-notes
+          } else {
+            gh release upload $tag `
+              "dist\ImgGen-windows-x86_64-v$env:PACKAGE_VERSION.zip" `
+              "dist\ImgGen-windows-x86_64-v$env:PACKAGE_VERSION-setup.exe" `
+              --repo "${{ github.repository }}" `
+              --clobber
+          }

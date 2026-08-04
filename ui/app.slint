@@ -1,0 +1,524 @@
+import { LineEdit, ListView, ScrollView, TextEdit } from "std-widgets.slint";
+
+struct HistoryItem {
+    id: string,
+    title: string,
+    subtitle: string,
+    thumbnail: image,
+}
+
+export component App inherits Window {
+    title: "ImgGen";
+    icon: @image-url("../assets/imggen-icon.svg");
+    width: 1440px;
+    height: 900px;
+    background: dark-theme ? #232631 : #f8f9fc;
+
+    in-out property <bool> dark-theme: false;
+    in-out property <bool> sidebar-collapsed: false;
+    in-out property <bool> settings-open: false;
+    in-out property <bool> appearance-tab: false;
+    in-out property <bool> generating: false;
+    in-out property <bool> loading-models: false;
+    in-out property <bool> generation-model-picker-open: false;
+    in-out property <bool> model-picker-open: false;
+    in-out property <bool> resolution-picker-open: false;
+    in-out property <bool> format-picker-open: false;
+    in-out property <bool> quantity-picker-open: false;
+    in-out property <color> accent-color: #806cff;
+    in-out property <color> selected-theme-color: #806cff;
+    in-out property <image> preview-image: @image-url("../assets/blank.svg");
+    in-out property <bool> showing-history-preview: false;
+    in-out property <[HistoryItem]> history-items: [];
+    in-out property <string> selected-history-id: "";
+    in-out property <[string]> provider-names: ["本地演示 API"];
+    in-out property <[string]> available-models: [];
+    in-out property <string> status-text: "准备好了，开始创作吧";
+    in-out property <string> current-provider-name: "本地演示 API";
+    in-out property <string> current-base-url: "";
+    in-out property <string> current-api-key: "";
+    in-out property <string> current-model: "";
+    in-out property <string> prompt: "一只戴着紫色贝雷帽的小猫，在糖果色星球上挥手";
+    in-out property <string> resolution: "1024 × 1024";
+    in-out property <string> image-format: "PNG";
+    in-out property <string> quantity: "1";
+    in-out property <int> current-provider-index: 0;
+
+    property <[string]> resolution-options: ["1024 × 1024", "1024 × 1792", "1792 × 1024"];
+    property <[string]> format-options: ["PNG", "JPEG", "WEBP"];
+    property <[string]> quantity-options: ["1", "2", "3", "4"];
+    property <[color]> theme-palette: [
+        #806cff, #5b8def, #37b6c8, #43b98c, #85c45a, #e9b949,
+        #f28b30, #ee6d63, #ec6aa6, #c477e9, #8a6fd1, #596579
+    ];
+
+    callback generate();
+    callback toggle-sidebar();
+    callback open-settings();
+    callback close-settings();
+    callback add-provider();
+    callback copy-provider(int);
+    callback delete-provider(int);
+    callback select-provider(int);
+    callback save-provider();
+    callback fetch-models();
+    callback select-model(string);
+    callback apply-custom-color();
+    callback toggle-theme();
+    callback select-history(string);
+    callback delete-history(string);
+
+    Rectangle {
+        background: dark-theme ? #232631 : #f8f9fc;
+
+        Rectangle {
+            x: 0;
+            y: 0;
+            width: sidebar-collapsed ? 76px : 252px;
+            height: parent.height;
+            background: dark-theme ? #1c1f28 : #ffffff;
+            border-color: dark-theme ? #303440 : #eceef5;
+            border-width: 1px;
+
+            if (sidebar-collapsed): Image {
+                x: 19px;
+                y: 22px;
+                width: 38px;
+                height: 38px;
+                source: @image-url("../assets/imggen-icon.svg");
+            }
+            if (!sidebar-collapsed): Image {
+                x: 28px;
+                y: 25px;
+                width: 38px;
+                height: 38px;
+                source: @image-url("../assets/imggen-icon.svg");
+            }
+            if (!sidebar-collapsed): Text {
+                x: 76px;
+                y: 28px;
+                text: "ImgGen";
+                color: accent-color;
+                font-size: 23px;
+                font-weight: 800;
+            }
+            if (!sidebar-collapsed): Text {
+                x: 29px;
+                y: 72px;
+                text: "AI 图片创作工作台";
+                color: dark-theme ? #9298aa : #8c91a3;
+                font-size: 12px;
+            }
+
+            Rectangle {
+                x: sidebar-collapsed ? 14px : 20px;
+                y: 106px;
+                width: parent.width - (sidebar-collapsed ? 28px : 40px);
+                height: 44px;
+                background: accent-color;
+                border-radius: 14px;
+                if (sidebar-collapsed): Image {
+                    x: 12px;
+                    y: 9px;
+                    width: 26px;
+                    height: 26px;
+                    source: @image-url("../assets/imggen-icon.svg");
+                }
+                if (!sidebar-collapsed): Text {
+                    x: 18px;
+                    width: parent.width;
+                    height: parent.height;
+                    text: "+   开始新创作";
+                    color: #ffffff;
+                    font-size: 14px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                    TouchArea {
+                        clicked => {
+                            root.prompt = "";
+                            root.showing-history-preview = false;
+                            root.selected-history-id = "";
+                            root.status-text = "准备好了，开始创作吧";
+                        }
+                    }
+            }
+
+            if (!sidebar-collapsed): Text {
+                x: 25px;
+                y: 184px;
+                text: "生成记录";
+                color: dark-theme ? #858b9b : #969baa;
+                font-size: 12px;
+                font-weight: 700;
+            }
+            if (!sidebar-collapsed): Rectangle {
+                x: 20px;
+                y: 210px;
+                width: parent.width - 40px;
+                height: parent.height - 292px;
+                background: transparent;
+                if (history-items.length == 0): Text {
+                    width: parent.width;
+                    height: 48px;
+                    text: "生成图片后会显示在这里";
+                    color: dark-theme ? #747b8d : #a0a5b3;
+                    font-size: 11px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                if (history-items.length > 0): ListView {
+                    width: parent.width;
+                    height: parent.height;
+                    mouse-drag-pan-enabled: true;
+                    vertical-scrollbar-policy: always-on;
+                    for item in history-items: Rectangle {
+                        width: parent.width;
+                        height: 66px;
+                        background: item.id == selected-history-id ? (dark-theme ? #343a49 : #f0efff) : transparent;
+                        border-radius: 10px;
+                        Image { x: 6px; y: 7px; width: 52px; height: 52px; source: item.thumbnail; image-fit: cover; }
+                        Text { x: 68px; y: 10px; width: parent.width - 112px; height: 22px; text: item.title; color: dark-theme ? #e4e7ef : #53596b; font-size: 11px; vertical-alignment: center; overflow: elide; }
+                        Text { x: 68px; y: 34px; width: parent.width - 112px; height: 18px; text: item.subtitle; color: dark-theme ? #9299aa : #9298a8; font-size: 9px; vertical-alignment: center; overflow: elide; }
+                        Rectangle { x: parent.width - 38px; y: 18px; width: 28px; height: 28px; background: dark-theme ? #454b5a : #f0f1f6; border-radius: 8px; Text { width: parent.width; height: parent.height; text: "删"; color: #d65d70; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; } TouchArea { clicked => { root.delete-history(item.id); } } }
+                        TouchArea { x: 0px; y: 0px; width: parent.width - 42px; height: parent.height; clicked => { root.select-history(item.id); } }
+                    }
+                }
+            }
+
+            Rectangle {
+                x: sidebar-collapsed ? 14px : 20px;
+                y: parent.height - 62px;
+                width: parent.width - (sidebar-collapsed ? 28px : 40px);
+                height: 40px;
+                background: dark-theme ? #282c37 : #f1f2f7;
+                border-radius: 13px;
+                Text {
+                    width: parent.width;
+                    height: parent.height;
+                    text: sidebar-collapsed ? "展开" : "收起";
+                    color: dark-theme ? #b9bfce : #646a7d;
+                    font-size: sidebar-collapsed ? 11px : 13px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                TouchArea { clicked => { root.toggle-sidebar(); } }
+            }
+        }
+
+        Rectangle {
+            x: sidebar-collapsed ? 76px : 252px;
+            y: 0px;
+            width: parent.width - (sidebar-collapsed ? 76px : 252px);
+            height: parent.height;
+            background: dark-theme ? #232631 : #f8f9fc;
+
+            Text {
+                x: 32px;
+                y: 30px;
+                text: "开始创作";
+                color: dark-theme ? #f2f3f8 : #272b39;
+                font-size: 25px;
+                font-weight: 800;
+            }
+            Text {
+                x: 33px;
+                y: 66px;
+                text: "把脑海里的想象，变成一张可爱的图片";
+                color: dark-theme ? #a6acbc : #898e9e;
+                font-size: 13px;
+            }
+
+            Rectangle {
+                x: 32px;
+                y: 112px;
+                width: parent.width - 470px;
+                height: parent.height - 144px;
+                background: dark-theme ? #2b2f3a : #ffffff;
+                border-radius: 24px;
+                border-color: dark-theme ? #353a48 : #eceef5;
+                border-width: 1px;
+                Text { x: 24px; y: 22px; text: "预览画布"; color: dark-theme ? #e7e9f1 : #353a4b; font-size: 15px; font-weight: 700; }
+                Text { x: parent.width - 145px; y: 24px; width: 120px; text: generating ? "生成中" : "等待生成"; color: accent-color; font-size: 10px; font-weight: 800; horizontal-alignment: right; }
+                Rectangle {
+                    x: 24px;
+                    y: 62px;
+                    width: parent.width - 48px;
+                    height: parent.height - 154px;
+                    background: dark-theme ? #20232d : #f4f5fa;
+                    border-radius: 18px;
+                    clip: true;
+                    Image { x: 18px; y: 18px; width: parent.width - 36px; height: parent.height - 36px; source: showing-history-preview ? root.preview-image : @image-url("../assets/blank.svg"); image-fit: contain; }
+                }
+                Text {
+                    x: 24px;
+                    y: parent.height - 88px;
+                    width: parent.width - 48px;
+                    height: 48px;
+                    text: status-text;
+                    color: dark-theme ? #aeb4c4 : #858b9a;
+                    font-size: 12px;
+                    wrap: word-wrap;
+                    overflow: elide;
+                }
+            }
+
+            Rectangle {
+                x: parent.width - 416px;
+                y: 112px;
+                width: 384px;
+                height: parent.height - 144px;
+                background: dark-theme ? #2b2f3a : #ffffff;
+                border-radius: 24px;
+                border-color: dark-theme ? #353a48 : #eceef5;
+                border-width: 1px;
+                Text { x: 24px; y: 22px; text: "生成配置"; color: dark-theme ? #e7e9f1 : #353a4b; font-size: 15px; font-weight: 700; }
+                Text { x: 24px; y: 53px; text: "模型、提示词和输出规格"; color: dark-theme ? #9298aa : #979cab; font-size: 11px; }
+
+                Text { x: 24px; y: 92px; text: "模型"; color: dark-theme ? #9da3b3 : #878d9d; font-size: 11px; }
+                Rectangle {
+                    x: 24px;
+                    y: 112px;
+                    width: parent.width - 48px;
+                    height: 52px;
+                    background: dark-theme ? #303542 : #ffffff;
+                    border-color: dark-theme ? #4a5060 : #e5e7ee;
+                    border-width: 1px;
+                    border-radius: 6px;
+                    Text {
+                        x: 16px;
+                        width: parent.width - 32px;
+                        height: parent.height;
+                        text: current-model == "" ? "未选择模型" : current-provider-name + "/" + current-model;
+                        color: current-model == "" ? (dark-theme ? #9da3b3 : #969baa) : (dark-theme ? #f3f4f8 : #343949);
+                        font-size: 12px;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                    Text { x: parent.width - 50px; width: 30px; height: parent.height; text: "选择"; color: accent-color; font-size: 11px; horizontal-alignment: center; vertical-alignment: center; }
+                    TouchArea {
+                        clicked => {
+                            root.generation-model-picker-open = !root.generation-model-picker-open;
+                            root.resolution-picker-open = false;
+                            root.format-picker-open = false;
+                            root.quantity-picker-open = false;
+                        }
+                    }
+                }
+                if (generation-model-picker-open): Rectangle {
+                    x: 24px;
+                    y: 170px;
+                    width: parent.width - 48px;
+                    height: 210px;
+                    background: dark-theme ? #363b49 : #ffffff;
+                    border-color: accent-color;
+                    border-width: 1px;
+                    border-radius: 10px;
+                    z: 8;
+                    if (available-models.length == 0): Text {
+                        width: parent.width;
+                        height: parent.height;
+                        text: "暂无模型，请先在 API 提供商中配置";
+                        color: dark-theme ? #b5bbca : #8e94a5;
+                        font-size: 11px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    if (available-models.length > 0): ListView {
+                        x: 8px;
+                        y: 8px;
+                        width: parent.width - 16px;
+                        height: parent.height - 16px;
+                        mouse-drag-pan-enabled: true;
+                        vertical-scrollbar-policy: always-on;
+                        for model in available-models: Rectangle {
+                            width: parent.width;
+                            height: 36px;
+                            background: dark-theme ? #2c303b : #f5f3ff;
+                            border-radius: 9px;
+                            Text { x: 12px; width: parent.width - 24px; height: parent.height; text: current-provider-name + "/" + model; color: dark-theme ? #eef0f6 : #5f55ba; font-size: 12px; vertical-alignment: center; overflow: elide; }
+                            TouchArea { clicked => { root.current-model = model; root.generation-model-picker-open = false; root.status-text = "模型选择成功"; } }
+                        }
+                    }
+                }
+
+                Text { x: 24px; y: 184px; text: "提示词"; color: dark-theme ? #9da3b3 : #878d9d; font-size: 11px; }
+                TextEdit { x: 24px; y: 204px; width: parent.width - 48px; height: 126px; text: root.prompt; placeholder-text: "写下你的提示词..."; wrap: word-wrap; edited => { root.prompt = self.text; } }
+
+                Text { x: 24px; y: 350px; text: "分辨率"; color: dark-theme ? #9da3b3 : #878d9d; font-size: 11px; }
+                Rectangle {
+                    x: 24px; y: 370px; width: 158px; height: 52px; background: dark-theme ? #303542 : #ffffff; border-color: dark-theme ? #4a5060 : #e5e7ee; border-width: 1px; border-radius: 6px;
+                    Text { x: 14px; width: parent.width - 28px; height: parent.height; text: root.resolution; color: dark-theme ? #f3f4f8 : #343949; font-size: 12px; vertical-alignment: center; overflow: elide; }
+                    Text { x: parent.width - 50px; width: 36px; height: parent.height; text: "选择"; color: accent-color; font-size: 11px; horizontal-alignment: center; vertical-alignment: center; }
+                    TouchArea { clicked => { root.resolution-picker-open = !root.resolution-picker-open; root.format-picker-open = false; root.quantity-picker-open = false; root.generation-model-picker-open = false; } }
+                }
+                Text { x: 202px; y: 350px; text: "格式"; color: dark-theme ? #9da3b3 : #878d9d; font-size: 11px; }
+                Rectangle {
+                    x: 202px; y: 370px; width: 158px; height: 52px; background: dark-theme ? #303542 : #ffffff; border-color: dark-theme ? #4a5060 : #e5e7ee; border-width: 1px; border-radius: 6px;
+                    Text { x: 14px; width: parent.width - 28px; height: parent.height; text: root.image-format; color: dark-theme ? #f3f4f8 : #343949; font-size: 12px; vertical-alignment: center; }
+                    Text { x: parent.width - 50px; width: 36px; height: parent.height; text: "选择"; color: accent-color; font-size: 11px; horizontal-alignment: center; vertical-alignment: center; }
+                    TouchArea { clicked => { root.format-picker-open = !root.format-picker-open; root.resolution-picker-open = false; root.quantity-picker-open = false; root.generation-model-picker-open = false; } }
+                }
+
+                Text { x: 24px; y: 440px; text: "数量"; color: dark-theme ? #9da3b3 : #878d9d; font-size: 11px; }
+                Rectangle {
+                    x: 24px; y: 460px; width: 158px; height: 52px; background: dark-theme ? #303542 : #ffffff; border-color: dark-theme ? #4a5060 : #e5e7ee; border-width: 1px; border-radius: 6px;
+                    Text { x: 14px; width: parent.width - 28px; height: parent.height; text: root.quantity + " 张"; color: dark-theme ? #f3f4f8 : #343949; font-size: 12px; vertical-alignment: center; }
+                    Text { x: parent.width - 50px; width: 36px; height: parent.height; text: "选择"; color: accent-color; font-size: 11px; horizontal-alignment: center; vertical-alignment: center; }
+                    TouchArea { clicked => { root.quantity-picker-open = !root.quantity-picker-open; root.resolution-picker-open = false; root.format-picker-open = false; root.generation-model-picker-open = false; } }
+                }
+                Text { x: 202px; y: 440px; text: "状态"; color: dark-theme ? #9da3b3 : #878d9d; font-size: 11px; }
+                Text { x: 202px; y: 474px; text: generating ? "处理中" : "已完成"; color: accent-color; font-size: 14px; font-weight: 700; }
+
+                if (resolution-picker-open): Rectangle {
+                    x: 24px; y: 426px; width: 158px; height: 114px; background: dark-theme ? #363b49 : #ffffff; border-color: accent-color; border-width: 1px; border-radius: 10px; z: 7;
+                    VerticalLayout { width: parent.width; height: parent.height; for option in resolution-options: Rectangle { width: parent.width; height: 38px; Text { x: 10px; width: parent.width - 20px; height: parent.height; text: option; color: dark-theme ? #eef0f6 : #4a5061; font-size: 11px; vertical-alignment: center; } TouchArea { clicked => { root.resolution = option; root.resolution-picker-open = false; root.status-text = "分辨率选择成功"; } } } }
+                }
+                if (format-picker-open): Rectangle {
+                    x: 202px; y: 426px; width: 158px; height: 114px; background: dark-theme ? #363b49 : #ffffff; border-color: accent-color; border-width: 1px; border-radius: 10px; z: 7;
+                    VerticalLayout { width: parent.width; height: parent.height; for option in format-options: Rectangle { width: parent.width; height: 38px; Text { x: 10px; width: parent.width - 20px; height: parent.height; text: option; color: dark-theme ? #eef0f6 : #4a5061; font-size: 11px; vertical-alignment: center; } TouchArea { clicked => { root.image-format = option; root.format-picker-open = false; root.status-text = "格式选择成功"; } } } }
+                }
+                if (quantity-picker-open): Rectangle {
+                    x: 24px; y: 516px; width: 158px; height: 152px; background: dark-theme ? #363b49 : #ffffff; border-color: accent-color; border-width: 1px; border-radius: 10px; z: 7;
+                    VerticalLayout { width: parent.width; height: parent.height; for option in quantity-options: Rectangle { width: parent.width; height: 38px; Text { x: 10px; width: parent.width - 20px; height: parent.height; text: option + " 张"; color: dark-theme ? #eef0f6 : #4a5061; font-size: 11px; vertical-alignment: center; } TouchArea { clicked => { root.quantity = option; root.quantity-picker-open = false; root.status-text = "数量选择成功"; } } } }
+                }
+
+                Rectangle {
+                    x: 24px; y: parent.height - 86px; width: parent.width - 48px; height: 50px; background: accent-color; border-radius: 16px;
+                    Text { width: parent.width; height: parent.height; text: generating ? "生成中" : "生成图片"; color: #ffffff; font-size: 14px; font-weight: 800; horizontal-alignment: center; vertical-alignment: center; }
+                    TouchArea { clicked => { root.generate(); } }
+                }
+            }
+
+            Rectangle {
+                x: 24px;
+                y: parent.height - 46px;
+                width: parent.width - 96px;
+                height: 24px;
+                background: transparent;
+                Text { x: 0px; y: 0px; width: parent.width; height: parent.height; text: status-text; color: dark-theme ? #b8bfce : #7d8497; font-size: 11px; vertical-alignment: center; wrap: word-wrap; overflow: elide; }
+            }
+
+            Rectangle {
+                x: parent.width - 48px;
+                y: parent.height - 48px;
+                width: 32px;
+                height: 32px;
+                background: accent-color;
+                border-radius: 11px;
+                Image { x: 7px; y: 7px; width: 18px; height: 18px; source: @image-url("../assets/imggen-icon.svg"); }
+                TouchArea { clicked => { root.open-settings(); } }
+            }
+        }
+
+        if (status-text != "" && !settings-open): Rectangle {
+            x: parent.width - 410px;
+            y: 20px;
+            width: 370px;
+            height: 34px;
+            background: dark-theme ? #343a49 : #ffffff;
+            border-color: accent-color;
+            border-width: 1px;
+            border-radius: 11px;
+            Text { x: 12px; width: parent.width - 24px; height: parent.height; text: status-text; color: dark-theme ? #e6e9f2 : #5e6475; font-size: 11px; vertical-alignment: center; overflow: elide; }
+        }
+
+        if (settings-open): Rectangle {
+            x: 0px; y: 0px; width: parent.width; height: parent.height; background: #11152299; z: 10;
+            Rectangle {
+                x: 40px; y: 28px; width: parent.width - 80px; height: parent.height - 56px;
+                background: dark-theme ? #282c37 : #ffffff; border-radius: 26px; border-color: dark-theme ? #3c414f : #e9ebf3; border-width: 1px;
+                Text { x: 30px; y: 20px; text: "设置中心"; color: dark-theme ? #f0f2f8 : #303545; font-size: 22px; font-weight: 800; }
+                Text { x: 31px; y: 54px; text: "管理 ImgGen 的外观与 API 连接"; color: dark-theme ? #9da3b3 : #8d92a1; font-size: 12px; }
+                Rectangle { x: 330px; y: 20px; width: parent.width - 450px; height: 48px; background: dark-theme ? #343a49 : #f7f8fb; border-radius: 11px; Text { x: 12px; width: parent.width - 24px; height: parent.height; text: status-text; color: dark-theme ? #e6e9f2 : #5e6475; font-size: 11px; vertical-alignment: center; wrap: word-wrap; overflow: elide; } }
+                Rectangle { x: parent.width - 96px; y: 20px; width: 66px; height: 36px; background: dark-theme ? #363b49 : #f2f3f8; border-radius: 11px; Text { width: parent.width; height: parent.height; text: "关闭"; color: dark-theme ? #e2e5ee : #697083; font-size: 12px; horizontal-alignment: center; vertical-alignment: center; } TouchArea { clicked => { root.close-settings(); } } }
+
+                Rectangle {
+                    x: 26px; y: 86px; width: parent.width - 52px; height: 42px; background: dark-theme ? #232631 : #f7f8fb; border-radius: 12px;
+                    Rectangle { x: 4px; y: 4px; width: 180px; height: 34px; background: appearance-tab ? transparent : accent-color; border-radius: 9px; Text { width: parent.width; height: parent.height; text: "供应商"; color: appearance-tab ? (dark-theme ? #bfc5d2 : #71788b) : #ffffff; font-size: 12px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; } TouchArea { clicked => { root.appearance-tab = false; } } }
+                    Rectangle { x: 188px; y: 4px; width: 180px; height: 34px; background: appearance-tab ? accent-color : transparent; border-radius: 9px; Text { width: parent.width; height: parent.height; text: "外观"; color: appearance-tab ? #ffffff : (dark-theme ? #bfc5d2 : #71788b); font-size: 12px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; } TouchArea { clicked => { root.appearance-tab = true; } } }
+                }
+
+                if (!appearance-tab): Rectangle {
+                    x: 26px; y: 140px; width: 290px; height: parent.height - 166px; background: dark-theme ? #232631 : #f7f8fb; border-radius: 18px;
+                    Text { x: 18px; y: 18px; text: "API 提供商"; color: dark-theme ? #dfe2eb : #4e5567; font-size: 12px; font-weight: 700; }
+                    ScrollView {
+                        x: 12px; y: 52px; width: parent.width - 24px; height: parent.height - 114px;
+                        Rectangle {
+                            width: parent.width;
+                            height: max(parent.height, provider-names.length * 66px);
+                            VerticalLayout {
+                                width: parent.width;
+                                spacing: 8px;
+                                for provider[index] in provider-names: Rectangle {
+                                    width: parent.width;
+                                    height: 54px;
+                                    background: index == current-provider-index ? accent-color : (dark-theme ? #2c303b : #ffffff);
+                                    border-radius: 12px;
+                                    Text { x: 12px; width: parent.width - 150px; height: parent.height; text: provider; color: index == current-provider-index ? #ffffff : (dark-theme ? #c4c9d6 : #62697a); font-size: 12px; vertical-alignment: center; overflow: elide; }
+                                    Rectangle { x: parent.width - 128px; y: 9px; width: 54px; height: 36px; background: index == current-provider-index ? #ffffff33 : (dark-theme ? #3b404d : #f0f1f6); border-radius: 9px; Text { width: parent.width; height: parent.height; text: "复制"; color: index == current-provider-index ? #ffffff : accent-color; font-size: 11px; horizontal-alignment: center; vertical-alignment: center; } TouchArea { clicked => { root.copy-provider(index); } } }
+                                    Rectangle { x: parent.width - 66px; y: 9px; width: 54px; height: 36px; background: index == current-provider-index ? #ffffff33 : (dark-theme ? #3b404d : #f0f1f6); border-radius: 9px; Text { width: parent.width; height: parent.height; text: "删除"; color: index == current-provider-index ? #ffffff : #d65d70; font-size: 11px; horizontal-alignment: center; vertical-alignment: center; } TouchArea { clicked => { root.delete-provider(index); } } }
+                                    TouchArea { x: 0px; y: 0px; width: parent.width - 140px; height: parent.height; clicked => { root.select-provider(index); } }
+                                }
+                            }
+                        }
+                    }
+                    Rectangle { x: 12px; y: parent.height - 52px; width: parent.width - 24px; height: 38px; background: dark-theme ? #303542 : #ffffff; border-radius: 11px; Text { width: parent.width; height: parent.height; text: "+ 添加 API 提供商"; color: accent-color; font-size: 12px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; } TouchArea { clicked => { root.add-provider(); } } }
+                }
+
+                if (!appearance-tab): ScrollView {
+                    x: 338px; y: 140px; width: parent.width - 364px; height: parent.height - 166px;
+                    Rectangle {
+                        width: parent.width;
+                        height: 760px;
+                        Text { x: 8px; y: 10px; text: "提供商名称"; color: dark-theme ? #aeb4c3 : #7f8595; font-size: 11px; }
+                        LineEdit { x: 8px; y: 32px; width: parent.width - 32px; height: 46px; text: root.current-provider-name; placeholder-text: "例如：OpenAI"; edited => { root.current-provider-name = self.text; } }
+                        Text { x: 8px; y: 96px; text: "Base URL"; color: dark-theme ? #aeb4c3 : #7f8595; font-size: 11px; }
+                        LineEdit { x: 8px; y: 118px; width: parent.width - 32px; height: 46px; text: root.current-base-url; placeholder-text: "https://api.openai.com/v1"; edited => { root.current-base-url = self.text; } }
+                        Text { x: 8px; y: 182px; text: "API Key"; color: dark-theme ? #aeb4c3 : #7f8595; font-size: 11px; }
+                        LineEdit { x: 8px; y: 204px; width: parent.width - 32px; height: 46px; text: root.current-api-key; placeholder-text: "sk-..."; edited => { root.current-api-key = self.text; } }
+                        Text { x: 8px; y: 268px; text: "模型"; color: dark-theme ? #aeb4c3 : #7f8595; font-size: 11px; }
+                        Rectangle { x: 8px; y: 290px; width: 158px; height: 42px; background: loading-models ? #b6aefa : accent-color; border-radius: 11px; Text { width: parent.width; height: parent.height; text: loading-models ? "获取中..." : "获取模型"; color: #ffffff; font-size: 12px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; } TouchArea { enabled: !loading-models; clicked => { root.fetch-models(); } } }
+                        Rectangle { x: 178px; y: 290px; width: 158px; height: 42px; background: dark-theme ? #343946 : #f0efff; border-radius: 11px; Text { width: parent.width; height: parent.height; text: "模型列表"; color: accent-color; font-size: 12px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; } TouchArea { clicked => { root.model-picker-open = !root.model-picker-open; } } }
+                        LineEdit { x: 8px; y: 348px; width: parent.width - 32px; height: 50px; text: root.current-model; placeholder-text: "没有自动模型时可填写"; edited => { root.current-model = self.text; } }
+                        if (model-picker-open): Rectangle {
+                            x: 8px; y: 404px; width: parent.width - 32px; height: 224px; background: dark-theme ? #363b49 : #ffffff; border-color: accent-color; border-width: 1px; border-radius: 12px; z: 8;
+                            if (available-models.length == 0): Text { width: parent.width; height: parent.height; text: "暂无模型，请先点击获取模型"; color: dark-theme ? #b5bbca : #8e94a5; font-size: 11px; horizontal-alignment: center; vertical-alignment: center; }
+                            if (available-models.length > 0): ListView {
+                                x: 8px; y: 8px; width: parent.width - 16px; height: parent.height - 16px;
+                                mouse-drag-pan-enabled: true;
+                                vertical-scrollbar-policy: always-on;
+                                for model in available-models: Rectangle {
+                                    width: parent.width;
+                                    height: 36px;
+                                    background: dark-theme ? #2c303b : #f5f3ff;
+                                    border-radius: 9px;
+                                    Text { x: 12px; width: parent.width - 24px; height: parent.height; text: current-provider-name + "/" + model; color: dark-theme ? #eef0f6 : #5f55ba; font-size: 12px; vertical-alignment: center; overflow: elide; }
+                                    TouchArea { clicked => { root.current-model = model; root.model-picker-open = false; root.status-text = "模型选择成功"; } }
+                                }
+                            }
+                        }
+                        Rectangle { x: 8px; y: 446px; width: parent.width - 32px; height: 48px; background: accent-color; border-radius: 14px; Text { width: parent.width; height: parent.height; text: "保存 API 提供商设置"; color: #ffffff; font-size: 13px; font-weight: 800; horizontal-alignment: center; vertical-alignment: center; } TouchArea { clicked => { root.save-provider(); } } }
+                    }
+                }
+
+                if (appearance-tab): ScrollView {
+                    x: 26px; y: 140px; width: parent.width - 52px; height: parent.height - 166px;
+                    Rectangle {
+                        width: parent.width;
+                        height: 500px;
+                        Text { x: 8px; y: 12px; text: "外观"; color: dark-theme ? #e2e5ed : #4e5567; font-size: 16px; font-weight: 700; }
+                        Text { x: 8px; y: 52px; text: "主题模式"; color: dark-theme ? #aeb4c3 : #7f8595; font-size: 11px; }
+                        Rectangle { x: 8px; y: 74px; width: 170px; height: 42px; background: dark-theme ? accent-color : #f0efff; border-radius: 11px; Text { width: parent.width; height: parent.height; text: dark-theme ? "切换到浅色" : "切换到深色"; color: dark-theme ? #ffffff : accent-color; font-size: 12px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; } TouchArea { clicked => { root.toggle-theme(); } } }
+                        Text { x: 8px; y: 148px; text: "主题色取色板"; color: dark-theme ? #aeb4c3 : #7f8595; font-size: 11px; }
+                        Rectangle { x: 8px; y: 170px; width: parent.width - 32px; height: 92px; background: dark-theme ? #232631 : #f7f8fb; border-radius: 12px; }
+                        HorizontalLayout { x: 22px; y: 192px; width: parent.width - 60px; height: 48px; spacing: 8px; for tone in theme-palette: Rectangle { width: 32px; height: 32px; background: tone; border-radius: 10px; TouchArea { clicked => { root.selected-theme-color = tone; root.apply-custom-color(); } } } }
+                        Text { x: 8px; y: 298px; text: "当前主题色"; color: dark-theme ? #aeb4c3 : #7f8595; font-size: 11px; }
+                        Rectangle { x: 8px; y: 320px; width: 52px; height: 40px; background: accent-color; border-radius: 10px; }
+                    }
+                }
+            }
+        }
+    }
+}
