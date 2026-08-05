@@ -3,7 +3,7 @@
 
 #define MyAppName "ImgGen"
 #ifndef MyAppVersion
-  #define MyAppVersion "0.1.0"
+  #define MyAppVersion "0.1.1"
 #endif
 #define MyAppPublisher "皊零"
 #define MyAppURL "https://github.com/ling552/imgGenMCP"
@@ -43,9 +43,9 @@ Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\assets\imggen-icon.svg"; DestDir: "{app}\assets"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\ImgGen"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"
-Name: "{autodesktop}\ImgGen"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
-Name: "{group}\MCP 配置说明"; Filename: "{app}\README.md"
+Name: "{autoprograms}\ImgGen"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"
+Name: "{autodesktop}\ImgGen"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{group}\MCP 配置说明"; Filename: "{app}\README.md"; IconFilename: "{app}\{#MyAppExeName}"
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "启动 ImgGen"; Flags: nowait postinstall skipifsilent

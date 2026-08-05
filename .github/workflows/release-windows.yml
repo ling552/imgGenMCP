@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "要发布的版本标签，例如 v0.1.0"
+        description: "要发布的版本标签，例如 v0.1.1"
         required: true
         type: string
 
@@ -31,6 +31,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - name: Install Rust stable
         shell: pwsh

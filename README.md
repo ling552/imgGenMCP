@@ -7,6 +7,7 @@ ImgGen 是一个使用 **Rust + Slint** 构建的 Windows 桌面图片生成工�
 ## 功能概览
 
 - Q 版 ImgGen 桌面界面和 ImgGen 图标。
+- Windows GUI 双击启动时不显示控制台窗口；任务栏、开始菜单和桌面快捷方式使用 ImgGen 图标。
 - 支持多个 API 提供商。
 - 支持保存、复制、删除和切换 API 提供商。
 - 支持从 `/models` 获取模型列表，也可以手动填写模型。
